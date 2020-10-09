@@ -1,13 +1,13 @@
 ﻿<?xml version="1.0"?>
 <package >
   <metadata>
-    <id>NunitXml.TestLogger</id>
+    <id>NunitXml.TestLogger.CSGFork</id>
     <version>$version$</version>
-    <title>NunitXml.TestLogger</title>
+    <title>NunitXml.TestLogger.CSGFork</title>
     <authors>codito,siphonophora,faizan2304,smadala,lahma</authors>
     <owners>codito,siphonophora,faizan2304,smadala</owners>
     <projectUrl>https://github.com/spekt/nunit.testlogger</projectUrl>
-    <description>Xml logger for NUnit v3 compliant xml report when test is running with "dotnet test" or "dotnet vstest".</description>
+    <description>Xml logger for NUnit v3 compliant xml report when test is running with "dotnet test" or "dotnet vstest". CSG enhancement generates nunit3 reports that are friendly with Pickles.</description>
     <license type="expression">MIT</license>
     <icon>packageIcon.png</icon>
   </metadata>
@@ -17,9 +17,9 @@
     <file src="packageIcon.png" target="\" />
 
     <!-- Net Core -->
-    <file src="NunitXml.TestLogger.props" target="build\netstandard1.0\" />
+    <file src="NunitXml.TestLogger.CSGFork.props" target="build\netstandard1.0\" />
 
     <!-- Desktop -->
-    <file src="NunitXml.TestLogger.props" target="build\net45\" />
+    <file src="NunitXml.TestLogger.CSGFork.props" target="build\net45\" />
   </files>
 </package>
