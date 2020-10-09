@@ -282,7 +282,7 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
             };
         }
 
-        private static TestSuite CreateFixture(IGrouping<string, TestResultInfo> resultsByType)
+        private TestSuite CreateFixture(IGrouping<string, TestResultInfo> resultsByType)
         {
             var element = new XElement("test-suite");
 
@@ -295,6 +295,10 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
             var time = TimeSpan.Zero;
             DateTime? startTime = null;
             DateTime? endTime = null;
+
+            var testFixtureType = ReflectionUtility.GetTestFixtureType(resultsByType.FirstOrDefault());
+            var properties = this.CreateFixturePropertiesElement(testFixtureType);
+            element.Add(properties);
 
             foreach (var result in resultsByType)
             {
@@ -378,7 +382,9 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
             };
         }
 
+#pragma warning disable SA1204 // Static elements should appear before instance elements
         private static XElement CreateTestCaseElement(TestResultInfo result)
+#pragma warning restore SA1204 // Static elements should appear before instance elements
         {
             var element = new XElement(
                 "test-case",
@@ -391,7 +397,7 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
                 new XAttribute("end-time", result.EndTime.ToString(DateFormat, CultureInfo.InvariantCulture)),
                 new XAttribute("duration", result.Duration.TotalSeconds),
                 new XAttribute("asserts", 0),
-                CreatePropertiesElement(result.TestCase));
+                CreatePropertiesElement(result));
 
             StringBuilder stdOut = new StringBuilder();
             foreach (var m in result.Messages)
@@ -418,7 +424,7 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
             return element;
         }
 
-        private static XElement CreatePropertiesElement(TestCase result)
+        private static XElement CreatePropertiesElement(TestResultInfo result)
         {
             var propertyElements = new HashSet<XElement>(result.Traits.Select(CreatePropertyElement));
 
@@ -426,13 +432,13 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
 
             // Required since TestCase.Properties is a superset of TestCase.Traits
             // Unfortunately not all NUnit properties are available as traits
-            var traitProperties = result.Properties.Where(t => t.Attributes.HasFlag(TestPropertyAttributes.Trait));
+            var traitProperties = result.TestCase.Properties.Where(t => t.Attributes.HasFlag(TestPropertyAttributes.Trait));
 
 #pragma warning restore CS0618 // Type or member is obsolete
 
             foreach (var p in traitProperties)
             {
-                var propValue = result.GetPropertyValue(p);
+                var propValue = result.TestCase.GetPropertyValue(p);
 
                 if (p.Id == "NUnit.TestCategory")
                 {
@@ -443,6 +449,21 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
                         propertyElements.Add(element);
                     }
                 }
+            }
+
+            // NUnit attributes not passed through in traits.
+            var splitMethod = result.Method.Split('(');
+            var testFixtureType = ReflectionUtility.GetTestFixtureType(result);
+            var testMethod = testFixtureType.GetMethod(splitMethod[0]);
+
+            var attributes = testMethod.GetCustomAttributes(false)
+                .Cast<Attribute>();
+
+            var description = ReflectionUtility.GetDescription(attributes);
+            if (description != null)
+            {
+                var propertyElement = CreatePropertyElement("Description", description).Single();
+                propertyElements.Add(propertyElement);
             }
 
             return propertyElements.Any()
@@ -487,6 +508,33 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
                 default:
                     return "Inconclusive";
             }
+        }
+
+        private XElement CreateFixturePropertiesElement(Type testFixtureType)
+        {
+            if (testFixtureType == null)
+            {
+                return null;
+            }
+
+            var propertyElements = new HashSet<XElement>();
+
+            var attributes = testFixtureType.GetCustomAttributes(false)
+                .Cast<Attribute>();
+
+            var description = ReflectionUtility.GetDescription(attributes);
+            if (description != null)
+            {
+                var propertyElement = CreatePropertyElement("Description", description).Single();
+                propertyElements.Add(propertyElement);
+            }
+
+            var categories = ReflectionUtility.GetCategories(attributes);
+            propertyElements.UnionWith(CreatePropertyElement("Category", categories));
+
+            return propertyElements.Any()
+                ? new XElement("properties", propertyElements.Distinct())
+                : null;
         }
 
         private void InitializeImpl(TestLoggerEvents events, string outputPath)
@@ -548,7 +596,7 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
                            group resultsInAssembly by resultsInAssembly.FullTypeName
                            into resultsByType
                            orderby resultsByType.Key
-                           select CreateFixture(resultsByType);
+                           select this.CreateFixture(resultsByType);
             var fixtureGroups = GroupTestSuites(fixtures);
             var suite = AggregateTestSuites(
                 fixtureGroups,

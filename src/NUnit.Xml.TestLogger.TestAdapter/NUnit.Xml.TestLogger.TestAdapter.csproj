@@ -6,7 +6,7 @@
   <Import Project="$(SourceRoot)scripts/settings.targets" />
 
   <PropertyGroup>
-    <TargetFramework>netstandard1.5</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <AssemblyName>Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestAdapter</AssemblyName>
 
     <!-- This project just links source code from another project. Disable static analysis. -->
@@ -17,6 +17,7 @@
     <Compile Include="..\NUnit.Xml.TestLogger\NUnitXmlTestLogger.cs">
       <Link>NUnitXmlTestLogger.cs</Link>
     </Compile>
+    <Compile Include="..\NUnit.Xml.TestLogger\ReflectionUtility.cs" Link="ReflectionUtility.cs" />
     <Compile Include="..\NUnit.Xml.TestLogger\StringExtensions.cs">
       <Link>StringExtensions.cs</Link>
     </Compile>
@@ -27,8 +28,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="15.5.0" />
-    <PackageReference Include="System.ValueTuple" Version="4.3.0" />
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="16.7.1" />
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
   </ItemGroup>
 
 </Project>
