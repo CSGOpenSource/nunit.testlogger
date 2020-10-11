@@ -452,14 +452,7 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
             }
 
             // NUnit attributes not passed through in traits.
-            var splitMethod = result.Method.Split('(');
-            var testFixtureType = ReflectionUtility.GetTestFixtureType(result);
-            var testMethod = testFixtureType.GetMethod(splitMethod[0]);
-
-            var attributes = testMethod.GetCustomAttributes(false)
-                .Cast<Attribute>();
-
-            var description = ReflectionUtility.GetDescription(attributes);
+            var description = ReflectionUtility.GetDescription(result);
             if (description != null)
             {
                 var propertyElement = CreatePropertyElement("Description", description).Single();
