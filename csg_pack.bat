@@ -1,1 +1,1 @@
-dotnet pack -c Release -p:Version=2.1.62
+dotnet pack -c Release -p:Version=2.1.62.1
