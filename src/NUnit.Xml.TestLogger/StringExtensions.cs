@@ -3,6 +3,7 @@
 
 namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
 {
+    using System;
     using System.Text.RegularExpressions;
 
     public static class StringExtensions
@@ -54,6 +55,18 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
             }
 
             return string.Empty;
+        }
+
+        public static (string fullTypeName, string methodName) TestResultKey(this TestResultInfo testResult)
+        {
+            var idx = testResult.Method.IndexOf("(", StringComparison.CurrentCulture);
+            if (idx != -1)
+            {
+                var methodName = testResult.Method.Substring(0, idx);
+                return (testResult.FullTypeName, methodName);
+            }
+
+            return (testResult.FullTypeName, testResult.Method);
         }
 
         private static string ReplaceInvalidCharacterWithUniCodeEscapeSequence(Match match)

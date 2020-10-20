@@ -9,7 +9,6 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
     using System.IO;
     using System.Linq;
     using System.Text;
-    using System.Text.RegularExpressions;
     using System.Xml;
     using System.Xml.Linq;
     using Microsoft.VisualStudio.TestPlatform.ObjectModel;
@@ -282,6 +281,89 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
             };
         }
 
+        private static TestSuite AggregateTestCases(
+            IEnumerable<TestCase> cases,
+            string fullTypeName,
+            string methodName)
+        {
+            var fullName = $"{fullTypeName}.{methodName}";
+            var element = new XElement("test-suite");
+
+            var total = 0;
+            var passed = 0;
+            var failed = 0;
+            var skipped = 0;
+            var inconclusive = 0;
+            var error = 0;
+            var time = TimeSpan.Zero;
+            DateTime? startTime = null;
+            DateTime? endTime = null;
+
+            foreach (var result in cases)
+            {
+                total += result.Total;
+                passed += result.Passed;
+                failed += result.Failed;
+                skipped += result.Skipped;
+                inconclusive += result.Inconclusive;
+                error += result.Error;
+                time += result.Time;
+
+                if (result.StartTime.HasValue && (!startTime.HasValue || result.StartTime.Value < startTime.Value))
+                {
+                    startTime = result.StartTime;
+                }
+
+                if (result.EndTime.HasValue && (!endTime.HasValue || result.EndTime.Value > endTime.Value))
+                {
+                    endTime = result.EndTime;
+                }
+
+                element.Add(result.Element);
+            }
+
+            element.SetAttributeValue("type", "ParameterizedMethod");
+            element.SetAttributeValue("name", methodName);
+            element.SetAttributeValue("fullname", fullName);
+            element.SetAttributeValue("className", fullTypeName);
+            element.SetAttributeValue("total", total);
+            element.SetAttributeValue("passed", passed);
+            element.SetAttributeValue("failed", failed);
+            element.SetAttributeValue("inconclusive", inconclusive);
+            element.SetAttributeValue("skipped", skipped);
+
+            var resultString = failed > 0 ? ResultStatusFailed : ResultStatusPassed;
+            element.SetAttributeValue("result", resultString);
+
+            if (startTime.HasValue)
+            {
+                element.SetAttributeValue("start-time", startTime.Value.ToString(DateFormat, CultureInfo.InvariantCulture));
+            }
+
+            if (endTime.HasValue)
+            {
+                element.SetAttributeValue("end-time", endTime.Value.ToString(DateFormat, CultureInfo.InvariantCulture));
+            }
+
+            element.SetAttributeValue("duration", time.TotalSeconds);
+
+            return new TestSuite
+            {
+                Element = element,
+                Name = methodName,
+                FullName = fullName,
+                Total = total,
+                Passed = passed,
+                Failed = failed,
+                Inconclusive = inconclusive,
+                Skipped = skipped,
+                Error = error,
+                StartTime = startTime,
+                EndTime = endTime,
+                Time = time
+            };
+        }
+
         private TestSuite CreateFixture(IGrouping<string, TestResultInfo> resultsByType)
         {
             var element = new XElement("test-suite");
@@ -300,41 +382,64 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
             var properties = this.CreateFixturePropertiesElement(testFixtureType);
             element.Add(properties);
 
-            foreach (var result in resultsByType)
+            var group = resultsByType
+                .GroupBy(x => x.TestResultKey())
+                .OrderBy(x => x.Key);
+
+            foreach (var entry in group)
             {
-                switch (result.Outcome)
+                if (entry.Count() == 1)
                 {
-                    case TestOutcome.Failed:
-                        failed++;
-                        break;
+                    var testResult = entry.First();
+                    var propertiesElement = CreatePropertiesElement(testResult);
+                    var testCase = CreateTestCase(testResult);
+                    testCase.Element.Add(propertiesElement);
 
-                    case TestOutcome.Passed:
-                        passed++;
-                        break;
+                    failed += testCase.Failed;
+                    passed += testCase.Passed;
+                    skipped += testCase.Skipped;
+                    inconclusive += testCase.Inconclusive;
+                    total++;
+                    time += testCase.Time;
 
-                    case TestOutcome.Skipped:
-                        skipped++;
-                        break;
-                    case TestOutcome.None:
-                        inconclusive++;
-                        break;
+                    if (!startTime.HasValue || testCase.StartTime < startTime)
+                    {
+                        startTime = testCase.StartTime;
+                    }
+
+                    if (!endTime.HasValue || testCase.EndTime > endTime)
+                    {
+                        endTime = testCase.EndTime;
+                    }
+
+                    element.Add(testCase.Element);
                 }
-
-                total++;
-                time += result.Duration;
-
-                if (!startTime.HasValue || result.StartTime < startTime)
+                else
                 {
-                    startTime = result.StartTime;
-                }
+                    var testSuite = AggregateTestCases(entry.Select(CreateTestCase), entry.Key.fullTypeName, entry.Key.methodName);
+                    failed += testSuite.Failed;
+                    passed += testSuite.Passed;
+                    skipped += testSuite.Skipped;
+                    inconclusive += testSuite.Inconclusive;
+                    total += testSuite.Total;
+                    time += testSuite.Time;
 
-                if (!endTime.HasValue || result.EndTime > endTime)
-                {
-                    endTime = result.EndTime;
-                }
+                    if (!startTime.HasValue || testSuite.StartTime < startTime)
+                    {
+                        startTime = testSuite.StartTime;
+                    }
 
-                // Create test-case elements
-                element.Add(CreateTestCaseElement(result));
+                    if (!endTime.HasValue || testSuite.EndTime > endTime)
+                    {
+                        endTime = testSuite.EndTime;
+                    }
+
+                    var firstTestResult = entry.First();
+                    var propertiesElement = CreatePropertiesElement(firstTestResult);
+                    testSuite.Element.AddFirst(propertiesElement);
+
+                    element.Add(testSuite.Element);
+                }
             }
 
             // Create test-suite element for the TestFixture
@@ -383,7 +488,7 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
         }
 
 #pragma warning disable SA1204 // Static elements should appear before instance elements
-        private static XElement CreateTestCaseElement(TestResultInfo result)
+        private static TestCase CreateTestCase(TestResultInfo result)
 #pragma warning restore SA1204 // Static elements should appear before instance elements
         {
             var element = new XElement(
@@ -391,13 +496,12 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
                 new XAttribute("name", result.Name),
                 new XAttribute("fullname", result.FullTypeName + "." + result.Method),
                 new XAttribute("methodname", result.Method),
-                new XAttribute("classname", result.Type),
+                new XAttribute("classname", result.FullTypeName),
                 new XAttribute("result", OutcomeToString(result.Outcome)),
                 new XAttribute("start-time", result.StartTime.ToString(DateFormat, CultureInfo.InvariantCulture)),
                 new XAttribute("end-time", result.EndTime.ToString(DateFormat, CultureInfo.InvariantCulture)),
                 new XAttribute("duration", result.Duration.TotalSeconds),
-                new XAttribute("asserts", 0),
-                CreatePropertiesElement(result));
+                new XAttribute("asserts", 0));
 
             StringBuilder stdOut = new StringBuilder();
             foreach (var m in result.Messages)
@@ -421,7 +525,40 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
                     new XElement("stack-trace", result.ErrorStackTrace.ReplaceInvalidXmlChar())));
             }
 
-            return element;
+            var testCase = new TestCase
+                {
+                    Element = element,
+                    Name = result.Name,
+                    FullName = result.FullTypeName + "." + result.Method,
+                    StartTime = result.StartTime,
+                    EndTime = result.EndTime,
+                    Time = result.Duration
+                };
+
+            switch (result.Outcome)
+            {
+                case TestOutcome.Failed:
+                    testCase.Failed = 1;
+                    testCase.Total = 1;
+                    break;
+
+                case TestOutcome.Passed:
+                    testCase.Passed = 1;
+                    testCase.Total = 1;
+                    break;
+
+                case TestOutcome.Skipped:
+                    testCase.Skipped = 1;
+                    testCase.Total = 1;
+                    break;
+
+                case TestOutcome.None:
+                    testCase.Inconclusive = 1;
+                    testCase.Total = 1;
+                    break;
+            }
+
+            return testCase;
         }
 
         private static XElement CreatePropertiesElement(TestResultInfo result)
@@ -604,6 +741,33 @@ namespace Microsoft.VisualStudio.TestPlatform.Extension.NUnit.Xml.TestLogger
         }
 
         public class TestSuite
+        {
+            public XElement Element { get; set; }
+
+            public string Name { get; set; }
+
+            public string FullName { get; set; }
+
+            public int Total { get; set; }
+
+            public int Passed { get; set; }
+
+            public int Failed { get; set; }
+
+            public int Inconclusive { get; set; }
+
+            public int Skipped { get; set; }
+
+            public int Error { get; set; }
+
+            public TimeSpan Time { get; set; }
+
+            public DateTime? StartTime { get; set; }
+
+            public DateTime? EndTime { get; set; }
+        }
+
+        public class TestCase
         {
             public XElement Element { get; set; }
 
